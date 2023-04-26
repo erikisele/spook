@@ -1,6 +1,7 @@
 """
 @author: congzlwag
 """
+# Edited by Erik Isele
 import numpy as np
 from .utils import worth_sparsify, laplacian_square_S
 # from .utils import dict_allsqsum #dict_innerprod, 
