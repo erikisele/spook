@@ -3,6 +3,7 @@ import numpy as np
 from scipy.sparse.linalg import spsolve
 from .base import SpookBase
 from .utils import laplacian_square_S #, worth_sparsify
+from scipy.linalg import solve as scipysolve
 # from memory_profiler import profile
 
 class SpookLinSolve(SpookBase):
@@ -16,8 +17,13 @@ class SpookLinSolve(SpookBase):
     _cache_AGtAG = False 
     # Dominant time complexity comes from linsolve, caching AGtAG is not 
     # really helpful, so I make it optional.
-    def __init__(self, B, A, mode="raw", G=None, lsparse=1, lsmooth=(0.1,0.1), 
+    def __init__(self, B, A, mode="raw", G=None, lsparse=1, lsmooth=(0.1,0.1), sp_idcs=None,
         **kwargs):
+        assert isinstance(sp_idcs, np.ndarray) or sp_idcs is None, "Sparsity index list must be None or numpy.ndarray type."
+        if isinstance(sp_idcs, np.ndarray):
+            assert len(sp_idcs)==len(lsparse), "Sparsity index list must be same length as lsparse values."
+            assert np.array(sp_idcs).sum()==A.shape[1], 'Sparsity indices have incorrect dimension.'
+        self.sp_idcs = sp_idcs
         if 'cache_AGtAG' in kwargs:
             self._cache_AGtAG = kwargs['cache_AGtAG']
             del kwargs['cache_AGtAG']
@@ -31,6 +37,8 @@ class SpookLinSolve(SpookBase):
         #     self._Bsm = laplacian_square_S(self._Ng, self.smoothness_drop_boundaries)
         self.setupProb()
         self._spfunc = lambda X: (X**2).sum()
+        
+
 
     def setupProb(self):
         need_to_flatten = (self._GtG is not None) or self.lsmooth[1]!=0
@@ -42,14 +50,31 @@ class SpookLinSolve(SpookBase):
     def __setupProbVec(self):
         if self.verbose: print("Set up a vectorized problem")
         assert self._GtG is None and self.lsmooth[1]==0
-        self.qhalf = self._Bcontracted
-        self.P = self.lsparse * sps.eye(self.Na) + self.Asm()
+        self.qhalf = -self._Bcontracted
+        if self.sp_idcs is None:
+            self.P = self.lsparse * sps.eye(self.Na) + self.Asm()
+        else:
+
+            self.P = self.Asm()
+            for i, sp_idx in enumerate(self.sp_idcs):
+                idx0 = self.sp_idcs[:i].sum().astype(int)
+                idx1 = self.sp_idcs[:i].sum().astype(int)+sp_idx
+                if self.verbose:
+                    print('sparsity idx0: {}'.format(idx0))
+                    print('sparsity idx1: {}'.format(idx1))
+                for j in range(idx0, idx1):
+                    if j==152:
+                        print('error')
+                        
+                    self.P[j,j] += self.lsparse[i]
+
+
         self.P += self._AtA
 
     # @profile
     def __setupProbFlat(self):
         # print("Set up a flattened problem")
-        self.qhalf = self._Bcontracted.ravel()
+        self.qhalf = -self._Bcontracted.ravel()
         self.P = self.lsparse * sps.eye(self.Na) + self.Asm()
         self.P = sps.kron(self.P, sps.eye(self.Ng))
         tmp = self.AGtAG # The base class' AGtAG first look for attr:_AGtAG
@@ -62,12 +87,23 @@ class SpookLinSolve(SpookBase):
 
     def update_lsparse(self, lsparse):
         # Updating lsparse won't change need_to_flatten
-        dlsp = lsparse - self.lsparse
-        for i in range(self.P.shape[0]):
-            self.P[i,i] += dlsp
-        # self.P += (lsparse - self.lsparse) * sps.eye(self.P.shape[0])
-        self.lsparse = lsparse
-
+        if self.sp_idcs is None:
+            dlsp = lsparse - self.lsparse
+            for i in range(self.P.shape[0]):
+                self.P[i,i] += dlsp
+            # self.P += (lsparse - self.lsparse) * sps.eye(self.P.shape[0])
+            self.lsparse = lsparse
+        else:
+            for i, sp_idx in enumerate(self.sp_idcs):
+                dlsp = lsparse[i] - self.lsparse[i]
+                idx0 = self.sp_idcs[:i].sum().astype(int)
+                idx1 = self.sp_idcs[:i].sum().astype(int)+sp_idx
+                if self.verbose==True:
+                    print('sparsity idx0: {}'.format(idx0))
+                    print('sparsity idx1: {}'.format(idx1))
+                for j in range(self.sp_idcs[:i].sum().astype(int), self.sp_idcs[:i].sum().astype(int)):
+                    self.P[j,j] += dlsp
+                
     def update_lsmooth(self, lsmooth):
         self.lsmooth = lsmooth
         if self._GtG is None and self.lsmooth[1]==0:
@@ -79,9 +115,9 @@ class SpookLinSolve(SpookBase):
         self._updateHyperParams(lsparse, lsmooth)
         if self.verbose: print("Solving Lin. Eq.")
         if isinstance(self.P, np.ndarray):
-            self.res = np.linalg.solve(self.P, self.qhalf)
+            self.res = scipysolve(self.P, -self.qhalf, assume_a='pos')
         else:
-            self.res = spsolve(self.P, self.qhalf)
+            self.res = spsolve(self.P, -self.qhalf)
 
 
 if __name__ == '__main__':

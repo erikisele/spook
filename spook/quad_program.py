@@ -236,7 +236,7 @@ class SpookL1(SpookQPBase):
     def calcPtriu(self):
         retP = self._Pcore + self.calc_total_smoother_triu()
         Nag  = self._Pcore.shape[0]
-        retP.resize((2*Nag, 2*Nag))
+        retP.resize((2*Nag, 2*Nag)) # SPARSE matrix, increases size with zero-padding
         return retP
 
     def setupProb(self,col=None):

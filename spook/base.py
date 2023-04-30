@@ -24,7 +24,7 @@ class SpookBase:
     smoothness_drop_boundaries = True
     verbose = False
     def __init__(self, B, A, mode="raw", G=None, lsparse=None, lsmooth=None, 
-        Bsmoother="laplacian", Asmoother="laplacian", normalize=True):
+        Bsmoother="laplacian", Asmoother="laplacian", normalize=True, sp_subman=None):
         """
         :param mode: "raw" or "contracted" (recommended) or "ADraw"
                      In the "contracted" mode, A is AT@A, B is (AT otimes GT)@B, G is GTG
@@ -34,6 +34,7 @@ class SpookBase:
                           If False, do nothing and set (sA, sG) = (1,1)
         """
         assert (mode in ['raw', 'contracted', 'ADraw']), f"Unknown mode: {mode}. Must be either 'raw' or 'contracted' or 'ADraw'"
+        assert sp_subman==None or np.array(sp_subman).sum()==A.shape[1], 'Sparsity submanifolds have incorrect dimension.'
 
         # Make sure the class eventually stores AtA, GtG and (At otimes Gt)B
         # All these are presumably dense, especially A, if not, crop in.
